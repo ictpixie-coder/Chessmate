@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ChessMate Pro - Mobile Chess & Analysis</title>
+    <title>ChessMate Pro - Mobile Chess & AI Analysis</title>
     <style>
         :root {
             --bg-dark: #09140f;
@@ -20,7 +20,7 @@
             --accent-green: #16a34a;
             --accent-purple: #047857;
             
-            
+            /* Move Annotation Badge Colors */
             --badge-brilliant: #10b981;
             --badge-great: #22c55e;
             --badge-best: #4ade80;
@@ -30,7 +30,7 @@
             --badge-blunder: #ef4444;
         }
 
-        
+        /* Theme Variations - all colors are solid, with no gradients/blending */
         body.theme-ocean {
             --bg-dark: #082f49;
             --bg-card: #0c4a6e;
@@ -708,8 +708,8 @@
         <div class="book-cover" id="book-cover">
             <div class="cover-emblem">♞</div>
             <div class="cover-title">CHESSMATE</div>
-            <div class="cover-subtitle">The Royal Chess </div>
-            <button class="cover-open-btn" onclick="openBookCover()">Play</button>
+            <div class="cover-subtitle">The Royal Chess Book</div>
+            <button class="cover-open-btn" onclick="openBookCover()">OPEN BOOK</button>
         </div>
         <div class="menu-card" id="menu-main">
             <div class="menu-title">CHESSMATE</div>
@@ -717,6 +717,9 @@
             <button class="menu-btn-primary" onclick="showMenuStep('2p-timer')">2 PLAYERS</button>
             <button class="menu-btn-secondary" onclick="showMenuStep('bot-options')">PLAYER VS BOT</button>
             <button class="menu-btn-secondary" onclick="showMenuStep('settings')">SETTINGS</button>
+            <button class="menu-btn-secondary" id="chessmate-google-signin" type="button" onclick="chessMateSignIn()">SIGN IN WITH GOOGLE</button>
+            <div id="chessmate-auth-status" role="status" aria-live="polite" style="font-size:11px;line-height:1.4;text-align:center;color:#d8bd85;padding:4px 8px;overflow-wrap:anywhere;">Sign in to connect your ChessMate account</div>
+            <button class="menu-btn-secondary" id="chessmate-signout" type="button" onclick="chessMateSignOut()" style="display:none;">SIGN OUT</button>
         </div>
 
         <!-- 2 Player Time Selection -->
@@ -2394,6 +2397,83 @@ function startBotGame(color) {
             }
             modal.classList.add('active');
         }
+    </script>
+    <!-- ChessMate Supabase Google Auth integration. Fill in the two public project values below.
+         Never place a database password, Google Client Secret, or service_role key in this HTML file. -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      (function () {
+        // Supabase Dashboard → Project Settings → API Keys: use Project URL + publishable key.
+        const SUPABASE_URL = 'PASTE_YOUR_SUPABASE_PROJECT_URL_HERE';
+        const SUPABASE_PUBLISHABLE_KEY = 'PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE';
+        let chessMateSupabase = null;
+        let authConfigured = false;
+
+        const statusEl = () => document.getElementById('chessmate-auth-status');
+        const signInBtn = () => document.getElementById('chessmate-google-signin');
+        const signOutBtn = () => document.getElementById('chessmate-signout');
+        function setStatus(message) { if (statusEl()) statusEl().textContent = message; }
+        function setSignedIn(user) {
+          const inUser = !!user;
+          if (signInBtn()) signInBtn().style.display = inUser ? 'none' : '';
+          if (signOutBtn()) signOutBtn().style.display = inUser ? '' : 'none';
+          setStatus(inUser ? 'Signed in: ' + (user.email || 'ChessMate player') : 'Sign in to connect your ChessMate account');
+        }
+
+        async function initAuth() {
+          if (!window.supabase || !window.supabase.createClient) {
+            setStatus('Sign-in library could not load. Check your internet connection.'); return;
+          }
+          if (SUPABASE_URL.startsWith('PASTE_') || SUPABASE_PUBLISHABLE_KEY.startsWith('PASTE_')) {
+            setStatus('Setup needed: add your Supabase Project URL and publishable key.'); return;
+          }
+          try {
+            chessMateSupabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+              auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+            });
+            authConfigured = true;
+            const { data: { session }, error } = await chessMateSupabase.auth.getSession();
+            if (error) throw error;
+            setSignedIn(session ? session.user : null);
+            chessMateSupabase.auth.onAuthStateChange((_event, sessionNow) => setSignedIn(sessionNow ? sessionNow.user : null));
+          } catch (error) {
+            console.error('ChessMate auth initialization failed:', error);
+            setStatus('Could not initialize sign-in. Check the Supabase URL and key.');
+          }
+        }
+
+        window.chessMateSignIn = async function () {
+          if (!authConfigured || !chessMateSupabase) {
+            setStatus('Setup needed: add your Supabase Project URL and publishable key, then upload index.html again.'); return;
+          }
+          try {
+            setStatus('Opening Google sign-in…');
+            const { error } = await chessMateSupabase.auth.signInWithOAuth({
+              provider: 'google',
+              options: { redirectTo: window.location.origin + window.location.pathname }
+            });
+            if (error) throw error;
+          } catch (error) {
+            console.error('ChessMate Google sign-in failed:', error);
+            setStatus('Sign-in failed: ' + (error.message || 'please check your provider settings.'));
+          }
+        };
+
+        window.chessMateSignOut = async function () {
+          if (!chessMateSupabase) return;
+          try {
+            const { error } = await chessMateSupabase.auth.signOut();
+            if (error) throw error;
+            setSignedIn(null);
+          } catch (error) {
+            console.error('ChessMate sign-out failed:', error);
+            setStatus('Could not sign out. Please try again.');
+          }
+        };
+
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initAuth);
+        else initAuth();
+      })();
     </script>
 </body>
 </html>
